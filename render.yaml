@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: pointauc-selfhosted
+    runtime: node
+    plan: free
+    buildCommand: cd server && npm install --omit=dev
+    startCommand: node server/server.mjs
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: TWITCH_CLIENT_ID
+        sync: false
+      - key: TWITCH_CLIENT_SECRET
+        sync: false
+      - key: DA_CLIENT_ID
+        sync: false
+      - key: DA_CLIENT_SECRET
+        sync: false

@@ -1,0 +1,52 @@
+diff --git a/src/domains/bids/external-integrations/DA/index.tsx b/src/domains/bids/external-integrations/DA/index.tsx
+index 255dfe4..2557a79 100644
+--- a/src/domains/bids/external-integrations/DA/index.tsx
++++ b/src/domains/bids/external-integrations/DA/index.tsx
+@@ -19,7 +19,7 @@ import { buildRedirectAuthFlow } from '../shared/auth/redirect/buildRedirectFlow
+ const id = 'da';
+ 
+ const authParams = {
+-  client_id: '6727',
++  client_id: window.__POINTAUC_CONFIG__?.DA_CLIENT_ID ?? import.meta.env.VITE_DA_CLIENT_ID ?? '6727',
+   redirect_uri: isBrowser ? `${window.location.origin}/${id}${ROUTES.REDIRECT.DEFAULT}` : '',
+   response_type: 'code',
+   scope: 'oauth-donation-subscribe oauth-user-show',
+diff --git a/src/domains/bids/external-integrations/Twitch/index.tsx b/src/domains/bids/external-integrations/Twitch/index.tsx
+index d65660c..f6e0302 100644
+--- a/src/domains/bids/external-integrations/Twitch/index.tsx
++++ b/src/domains/bids/external-integrations/Twitch/index.tsx
+@@ -13,7 +13,9 @@ import { buildRedirectAuthFlow } from '@domains/bids/external-integrations/share
+ 
+ const id = 'twitch';
+ const authParams = {
+-  client_id: import.meta.env.VITE_TWITCH_CLIENT_ID ?? '83xjs5k4yvqo0yn2cxu1v5lan2eeam',
++  client_id: window.__POINTAUC_CONFIG__?.TWITCH_CLIENT_ID
++    ?? import.meta.env.VITE_TWITCH_CLIENT_ID
++    ?? '83xjs5k4yvqo0yn2cxu1v5lan2eeam',
+   redirect_uri: isBrowser ? `${window.location.origin}/twitch/redirect` : '',
+   response_type: 'code',
+   scope: 'channel:read:redemptions channel:manage:redemptions',
+diff --git a/src/vite-env.d.ts b/src/vite-env.d.ts
+index 11925d9..66d26dd 100644
+--- a/src/vite-env.d.ts
++++ b/src/vite-env.d.ts
+@@ -3,6 +3,7 @@
+ 
+ interface ImportMetaEnv {
+   readonly VITE_BACKEND_ORIGIN?: string;
++  readonly VITE_DA_CLIENT_ID?: string;
+   readonly VITE_ERROR_TRACKING_PROVIDER?: 'glitchtip' | 'sentry';
+   readonly VITE_GLITCHTIP_DSN?: string;
+   readonly VITE_GLITCHTIP_ENVIRONMENT?: string;
+@@ -11,3 +12,11 @@ interface ImportMetaEnv {
+   readonly VITE_SENTRY_ENVIRONMENT?: string;
+   readonly VITE_TMDB_API_KEY?: string;
+ }
++
++interface Window {
++  /** Runtime configuration injected by the self-hosted backend into index.html. */
++  __POINTAUC_CONFIG__?: {
++    TWITCH_CLIENT_ID?: string;
++    DA_CLIENT_ID?: string;
++  };
++}
