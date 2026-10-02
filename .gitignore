@@ -3,3 +3,4 @@ server/node_modules/
 server/data/
 server/server.log
 *.log
+zip-package/
