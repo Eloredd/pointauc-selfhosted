@@ -285,6 +285,10 @@ app.get('/api/user', requireSession, (req, res) => {
 // socketConnectionToken we return from /api/user)
 // ---------------------------------------------------------------------------
 
+// Debug: remembers the exact reason of the last failed DA auth so it can be
+// fetched from a deployed instance without access to its console logs.
+let lastDaAuthError = null;
+
 app.post('/api/da/auth', requireSession, async (req, res) => {
   const { code } = req.body ?? {};
   if (!DA_CLIENT_ID || !DA_CLIENT_SECRET) {
@@ -302,13 +306,19 @@ app.post('/api/da/auth', requireSession, async (req, res) => {
         redirect_uri: `${publicOrigin(req)}/da/redirect`,
       }),
     });
-    if (!tokenRes.ok) throw new Error(`DA token exchange failed: ${tokenRes.status}`);
+    if (!tokenRes.ok) {
+      lastDaAuthError = `token exchange ${tokenRes.status}: ${await tokenRes.text().catch(() => '')}`;
+      throw new Error(`DA token exchange failed: ${tokenRes.status}`);
+    }
     const token = await tokenRes.json();
 
     const userRes = await fetch('https://www.donationalerts.com/api/v1/user/oauth', {
       headers: { Authorization: `Bearer ${token.access_token}` },
     });
-    if (!userRes.ok) throw new Error(`DA user fetch failed: ${userRes.status}`);
+    if (!userRes.ok) {
+      lastDaAuthError = `user fetch ${userRes.status}: ${await userRes.text().catch(() => '')}`;
+      throw new Error(`DA user fetch failed: ${userRes.status}`);
+    }
     const userData = (await userRes.json()).data ?? {};
     if (!userData.socket_connection_token) throw new Error('DA response has no socket_connection_token');
 
@@ -319,6 +329,7 @@ app.post('/api/da/auth', requireSession, async (req, res) => {
       socketConnectionToken: userData.socket_connection_token,
     };
     saveSessions();
+    lastDaAuthError = null;
     console.log(`[auth] DonationAlerts connected: ${req.session.da.username}`);
     res.json({});
   } catch (e) {
@@ -326,6 +337,8 @@ app.post('/api/da/auth', requireSession, async (req, res) => {
     res.status(400).json({ message: e.message });
   }
 });
+
+app.get('/debug/last-da-error', (_req, res) => res.json({ lastDaAuthError }));
 
 app.post('/api/da/centrifuge/subscribe', requireSession, (_req, res) => res.json({}));
 
