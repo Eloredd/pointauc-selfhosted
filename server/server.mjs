@@ -719,14 +719,24 @@ const startChatListener = (session, namespace) => {
       if (!match) continue;
       diag.privmsgCount++;
       const [, tagsRaw, login, text] = match;
+      // strip invisible/zero-width characters some clients inject — they break
+      // the amount regex at the end of the message
+      const clean = text.replace(
+        /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\uFFA0\u2800]/g,
+        '',
+      ).trim();
       const tags = Object.fromEntries(
         tagsRaw.split(';').map((kv) => [kv.slice(0, kv.indexOf('=')), kv.slice(kv.indexOf('=') + 1)]),
       );
-      const rest = text.slice(CHAT_BID_COMMAND.length).trim();
-      if (text.toLowerCase().startsWith(CHAT_BID_COMMAND) && rest) {
+      const rest = clean.slice(CHAT_BID_COMMAND.length).trim();
+      if (clean.toLowerCase().startsWith(CHAT_BID_COMMAND) && rest) {
         // `!bid <lot name> <amount>`  |  `!bid <amount>`
         const amountMatch = /(\d[\d\s.,]*)(k)?\s*$/i.exec(rest);
-        if (!amountMatch) continue;
+        if (!amountMatch) {
+          diag.skippedCount = (diag.skippedCount ?? 0) + 1;
+          diag.lastSkipped = clean.slice(0, 120);
+          continue;
+        }
         let amount = Number(amountMatch[1].replace(/[\s,]/g, '')) * (amountMatch[2] ? 1000 : 1);
         if (!Number.isFinite(amount) || amount <= 0) continue;
         amount = Math.round(amount);
