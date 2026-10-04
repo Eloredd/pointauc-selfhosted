@@ -886,6 +886,31 @@ io.on('connection', (socket) => {
 });
 
 // ---------------------------------------------------------------------------
+// Debug / test helpers — inactive unless DEBUG_KEY is set in the environment
+// ---------------------------------------------------------------------------
+
+const debugBidHandler = (req, res) => {
+  const key = process.env.DEBUG_KEY;
+  const supplied = req.get('x-debug-key') || req.query.key;
+  if (!key || supplied !== key) return res.status(404).json({ message: 'Not found' });
+  const { username = 'test-user', cost = 100, message = '' } = { ...req.query, ...req.body };
+  const bid = {
+    id: `debug-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    timestamp: new Date().toISOString(),
+    username: String(username),
+    cost: Number(cost) || 100,
+    color: '#22c55e',
+    message: String(message),
+  };
+  for (const session of new Set(sessions.values())) {
+    io.of('/twitch').to(`session:${session.userKey}`).emit('Bid', bid);
+  }
+  res.json({ ok: true, bid });
+};
+app.get('/debug/bid', debugBidHandler);
+app.post('/debug/bid', debugBidHandler);
+
+// ---------------------------------------------------------------------------
 // Static frontend (SPA fallback) — must be last
 // ---------------------------------------------------------------------------
 
