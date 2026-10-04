@@ -694,10 +694,10 @@ const startChatListener = (session, namespace) => {
 
   ws.on('open', () => {
     diag.connectedAt = new Date().toISOString();
-    ws.send('CAP REQ :tags');
+    // Capability names must be fully qualified per Twitch docs, shorthand
+    // `:tags` gets NAK'd and message tags are lost.
+    ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
     ws.send(`NICK justinfan${crypto.randomInt(10000, 99999)}`);
-    ws.send(`JOIN #${channel}`);
-    console.log(`[chat] listening #${channel} for ${CHAT_BID_COMMAND} commands`);
   });
   ws.on('message', (raw) => {
     for (const line of raw.toString().split('\r\n')) {
@@ -705,7 +705,16 @@ const startChatListener = (session, namespace) => {
         diag.ircLines.push(line.slice(0, 160));
         if (diag.ircLines.length > 12) diag.ircLines.shift();
       }
-      if (line.startsWith('PING')) ws.send('PONG :tmi.twitch.tv');
+      if (line.startsWith('PING')) {
+        ws.send('PONG :tmi.twitch.tv');
+        continue;
+      }
+      // per Twitch docs: join only after the welcome (001) line
+      if (line.includes(' 001 ')) {
+        ws.send(`JOIN #${channel}`);
+        console.log(`[chat] listening #${channel} for ${CHAT_BID_COMMAND} commands`);
+        continue;
+      }
       const match = /^(?:@([^ ]+) )?:([^!]+)![^ ]+ PRIVMSG #[^ ]+ :(.*)$/.exec(line);
       if (!match) continue;
       diag.privmsgCount++;
@@ -744,6 +753,12 @@ const startChatListener = (session, namespace) => {
     diag.closedAt = new Date().toISOString();
     chatSockets.delete(session.userKey);
     session.chatConnected = false;
+    // self-heal: bring the listener back while the auction page is still open
+    setTimeout(() => {
+      if (namespace.sockets.size > 0 && !chatSockets.has(session.userKey)) {
+        startChatListener(session, namespace);
+      }
+    }, 5000);
   });
 };
 
