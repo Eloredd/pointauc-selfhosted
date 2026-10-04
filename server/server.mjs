@@ -289,7 +289,13 @@ app.get('/api/user', requireSession, (req, res) => {
 // fetched from a deployed instance without access to its console logs.
 let lastDaAuthError = null;
 
-app.post('/api/da/auth', requireSession, async (req, res) => {
+app.post('/api/da/auth', async (req, res) => {
+  const session = getSessionFromRequest(req);
+  if (!session) {
+    lastDaAuthError = 'no valid session (401): userSession cookie is missing or was wiped by a redeploy — log in via Twitch first, then connect DA';
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  req.session = session;
   const { code } = req.body ?? {};
   if (!DA_CLIENT_ID || !DA_CLIENT_SECRET) {
     return res.status(400).json({ message: 'DonationAlerts app is not configured: set DA_CLIENT_ID and DA_CLIENT_SECRET' });
