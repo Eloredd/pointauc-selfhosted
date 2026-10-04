@@ -668,6 +668,7 @@ const pollRedemptions = async (session, namespace) => {
 // ---------------------------------------------------------------------------
 
 const chatSockets = new Map(); // userKey -> ws
+const chatDiagnostics = new Map(); // userKey -> live IRC diagnostics (see /debug/chat-status)
 
 const startChatListener = (session, namespace) => {
   if (chatSockets.has(session.userKey)) return;
@@ -676,11 +677,23 @@ const startChatListener = (session, namespace) => {
     .replace(/^#/, '')
     .toLowerCase();
 
+  const diag = {
+    channel,
+    connectedAt: null,
+    closedAt: null,
+    ircLines: [],
+    privmsgCount: 0,
+    bidCount: 0,
+    lastError: null,
+  };
+  chatDiagnostics.set(session.userKey, diag);
+
   const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
   chatSockets.set(session.userKey, ws);
   session.chatConnected = true;
 
   ws.on('open', () => {
+    diag.connectedAt = new Date().toISOString();
     ws.send('CAP REQ :tags');
     ws.send(`NICK justinfan${crypto.randomInt(10000, 99999)}`);
     ws.send(`JOIN #${channel}`);
@@ -688,9 +701,14 @@ const startChatListener = (session, namespace) => {
   });
   ws.on('message', (raw) => {
     for (const line of raw.toString().split('\r\n')) {
+      if (line) {
+        diag.ircLines.push(line.slice(0, 160));
+        if (diag.ircLines.length > 12) diag.ircLines.shift();
+      }
       if (line.startsWith('PING')) ws.send('PONG :tmi.twitch.tv');
       const match = /^(?:@([^ ]+) )?:([^!]+)![^ ]+ PRIVMSG #[^ ]+ :(.*)$/.exec(line);
       if (!match) continue;
+      diag.privmsgCount++;
       const [, tagsRaw, login, text] = match;
       const tags = Object.fromEntries(
         tagsRaw.split(';').map((kv) => [kv.slice(0, kv.indexOf('=')), kv.slice(kv.indexOf('=') + 1)]),
@@ -713,16 +731,31 @@ const startChatListener = (session, namespace) => {
           message: lotName, // empty -> unassigned bid the streamer can route manually
         };
         console.log(`[chat] ${bid.username} -> ${bid.cost} pts ${lotName ? `("${lotName}")` : '(unassigned)'}`);
+        diag.bidCount++;
         namespace.to(`session:${session.userKey}`).emit('Bid', bid);
       }
     }
   });
-  ws.on('error', (e) => console.warn('[chat] error:', e.message));
+  ws.on('error', (e) => {
+    diag.lastError = e.message;
+    console.warn('[chat] error:', e.message);
+  });
   ws.on('close', () => {
+    diag.closedAt = new Date().toISOString();
     chatSockets.delete(session.userKey);
     session.chatConnected = false;
   });
 };
+
+app.get('/debug/chat-status', (_req, res) => res.json({
+  command: CHAT_BID_COMMAND,
+  listeners: [...chatDiagnostics.entries()].map(([userKey, d]) => ({
+    userKey,
+    ...d,
+    ircConnected: chatSockets.has(userKey),
+    ircReadyState: chatSockets.get(userKey)?.readyState ?? null,
+  })),
+}));
 
 const stopChatListener = (session) => {
   const ws = chatSockets.get(session.userKey);
