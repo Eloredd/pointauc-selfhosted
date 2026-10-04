@@ -886,26 +886,6 @@ io.on('connection', (socket) => {
 });
 
 // ---------------------------------------------------------------------------
-// Debug / test helpers
-// ---------------------------------------------------------------------------
-
-app.post('/debug/bid', (req, res) => {
-  const { username = 'test-user', cost = 100, message = '' } = req.body ?? {};
-  const bid = {
-    id: `debug-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    timestamp: new Date().toISOString(),
-    username,
-    cost: Number(cost),
-    color: '#22c55e',
-    message,
-  };
-  for (const session of new Set(sessions.values())) {
-    io.of('/twitch').to(`session:${session.userKey}`).emit('Bid', bid);
-  }
-  res.json({});
-});
-
-// ---------------------------------------------------------------------------
 // Static frontend (SPA fallback) — must be last
 // ---------------------------------------------------------------------------
 
