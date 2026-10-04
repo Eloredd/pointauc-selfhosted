@@ -133,6 +133,10 @@ const rememberRedemption = (session, id) => {
 // ---------------------------------------------------------------------------
 
 const app = express();
+// Behind reverse proxies (Railway, Cloudflare Tunnel, HF Spaces) TLS ends at the
+// proxy — trust X-Forwarded-* so req.protocol is https and OAuth redirect_uri
+// is built with the correct scheme.
+app.set('trust proxy', true);
 app.use(express.json({ limit: '2mb' }));
 
 if (process.env.REQUEST_LOG) {
