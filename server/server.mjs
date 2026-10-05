@@ -945,7 +945,18 @@ const renderIndexHtml = (_req, res) => {
   res.set('Cache-Control', 'no-cache').type('html').send(html);
 };
 
-app.get('/', renderIndexHtml);
+// Opening the site while logged out redirects to Twitch OAuth — after consent
+// the user lands back on /twitch/redirect, gets a session, and the app loads.
+// This mirrors pointauc.com where the visitor is always authenticated.
+app.get('/', (req, res, next) => {
+  if (!REAL_TWITCH || getSessionFromRequest(req)) return renderIndexHtml(req, res, next);
+  const authUrl = new URL('https://id.twitch.tv/oauth2/authorize');
+  authUrl.searchParams.set('client_id', CLIENT_ID);
+  authUrl.searchParams.set('redirect_uri', `${publicOrigin(req)}/twitch/redirect`);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('scope', 'channel:read:redemptions channel:manage:redemptions');
+  return res.redirect(authUrl.toString());
+});
 app.use(express.static(FRONTEND_DIST, { index: false }));
 app.get('*', renderIndexHtml);
 
