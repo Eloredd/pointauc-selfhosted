@@ -70,6 +70,8 @@ const loadSessions = () => {
   }
 };
 
+let lastSaveError = null;
+
 const saveSessions = () => {
   try {
     fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
@@ -79,7 +81,9 @@ const saveSessions = () => {
       loginTokens: [...sessions.entries()].filter(([, s]) => s === session).map(([t]) => t),
     }));
     fs.writeFileSync(DATA_FILE, JSON.stringify({ users }));
+    lastSaveError = null;
   } catch (e) {
+    lastSaveError = e.message;
     console.warn('[store] save failed:', e.message);
   }
 };
@@ -289,12 +293,22 @@ app.get('/api/user', requireSession, (req, res) => {
 // fetched from a deployed instance without access to its console logs.
 let lastDaAuthError = null;
 
-app.post('/api/da/auth', async (req, res) => {
-  const session = getSessionFromRequest(req);
+// Integration bindings (DA / DonatePay) work without a Twitch login: when the
+// visitor has no session yet, an anonymous one is minted on the fly so the
+// binding succeeds right after clearing cookies.
+const getOrMintSession = (req, res) => {
+  let session = getSessionFromRequest(req);
   if (!session) {
-    lastDaAuthError = 'no valid session (401): userSession cookie is missing or was wiped by a redeploy — log in via Twitch first, then connect DA';
-    return res.status(401).json({ message: 'Unauthorized' });
+    const created = createSession({ username: 'streamer' });
+    session = created.session;
+    saveSessions();
+    res.setHeader('Set-Cookie', `userSession=${created.token}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}`);
   }
+  return session;
+};
+
+app.post('/api/da/auth', async (req, res) => {
+  const session = getOrMintSession(req, res);
   req.session = session;
   const { code } = req.body ?? {};
   if (!DA_CLIENT_ID || !DA_CLIENT_SECRET) {
@@ -348,7 +362,8 @@ app.get('/debug/last-da-error', (_req, res) => res.json({ lastDaAuthError }));
 
 app.post('/api/da/centrifuge/subscribe', requireSession, (_req, res) => res.json({}));
 
-app.post('/api/donatePay/auth', requireSession, (req, res) => {
+app.post('/api/donatePay/auth', (req, res) => {
+  req.session = getOrMintSession(req, res);
   const { accessToken } = req.body ?? {};
   if (!accessToken) return res.status(400).json({ message: 'accessToken required' });
   req.session.donatePayRu = { accessToken, userId: req.body?.userId };
@@ -356,7 +371,8 @@ app.post('/api/donatePay/auth', requireSession, (req, res) => {
   res.json({});
 });
 
-app.post('/api/donatePayEu/auth', requireSession, (req, res) => {
+app.post('/api/donatePayEu/auth', (req, res) => {
+  req.session = getOrMintSession(req, res);
   const { accessToken } = req.body ?? {};
   if (!accessToken) return res.status(400).json({ message: 'accessToken required' });
   req.session.donatePayEu = { accessToken, userId: req.body?.userId };
