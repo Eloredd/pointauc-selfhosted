@@ -215,18 +215,6 @@ const helixRefreshToken = async (session) => {
 app.post('/api/twitch/auth', async (req, res) => {
   const { code } = req.body ?? {};
 
-  // Explicit guest login — keeps the site usable without a Twitch account,
-  // even when real Twitch app credentials are configured.
-  if (code === 'guest') {
-    const existing = getSessionFromRequest(req);
-    if (existing) return res.json({ isNew: false });
-    const { session, token: sessionToken } = createSession({ username: 'streamer' });
-    saveSessions();
-    res.setHeader('Set-Cookie', `userSession=${sessionToken}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}`);
-    console.log(`[auth] guest session created (${session.username})`);
-    return res.json({ isNew: false });
-  }
-
   if (REAL_TWITCH && code) {
     try {
       const redirectUri = `${publicOrigin(req)}/twitch/redirect`;
@@ -946,18 +934,7 @@ app.use((req, res, next) => {
 
 // Runtime configuration for the frontend (Twitch/DA OAuth client ids) is
 // injected into index.html so client ids can be changed without a rebuild.
-// Like pointauc.com, the site is fully usable without logging in: any HTML
-// page (except OBS overlay views, which authenticate with bearer tokens)
-// automatically gets a guest session when the visitor has none.
-const renderIndexHtml = (req, res) => {
-  let session = getSessionFromRequest(req);
-  if (!session && !req.path.startsWith('/overlays')) {
-    const created = createSession({ username: 'streamer' });
-    session = created.session;
-    saveSessions();
-    res.setHeader('Set-Cookie', `userSession=${created.token}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}`);
-    console.log(`[auth] auto guest session created (${session.username})`);
-  }
+const renderIndexHtml = (_req, res) => {
   const config = {
     TWITCH_CLIENT_ID: CLIENT_ID || undefined,
     DA_CLIENT_ID: DA_CLIENT_ID || undefined,
@@ -968,7 +945,18 @@ const renderIndexHtml = (req, res) => {
   res.set('Cache-Control', 'no-cache').type('html').send(html);
 };
 
-app.get('/', renderIndexHtml);
+// Opening the site while logged out redirects to Twitch OAuth — after consent
+// the user lands back on /twitch/redirect, gets a session, and the app loads.
+// This mirrors pointauc.com where the visitor is always authenticated.
+app.get('/', (req, res, next) => {
+  if (!REAL_TWITCH || getSessionFromRequest(req)) return renderIndexHtml(req, res, next);
+  const authUrl = new URL('https://id.twitch.tv/oauth2/authorize');
+  authUrl.searchParams.set('client_id', CLIENT_ID);
+  authUrl.searchParams.set('redirect_uri', `${publicOrigin(req)}/twitch/redirect`);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('scope', 'channel:read:redemptions channel:manage:redemptions');
+  return res.redirect(authUrl.toString());
+});
 app.use(express.static(FRONTEND_DIST, { index: false }));
 app.get('*', renderIndexHtml);
 
